@@ -1,0 +1,59 @@
+{
+    "name": "pm2-autoscale",
+    "version": "1.4.0",
+    "description": "PM2 module to help dynamically scale applications based on utilization demand",
+    "main": "index.js",
+    "dependencies": {
+        "pidusage": "^3.0.2",
+        "pm2": "^5.4.2",
+        "pmx": "beta"
+    },
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "watch": "tsc -w -p tsconfig.json",
+        "publish": "npm run build && npm publish"
+    },
+    "files": [
+        "README.md",
+        "**/*.js"
+    ],
+    "apps": [
+        {
+            "merge_logs": true,
+            "max_memory_restart": "256M",
+            "script": "index.js"
+        }
+    ],
+    "config": {
+        "scale_cpu_threshold": 30,
+        "release_cpu_threshold": 5,
+        "debug": false,
+        "ignore_apps": "",
+        "max_workers": "-1",
+        "min_seconds_to_add_worker": 10,
+        "min_seconds_to_release_worker": 30
+    },
+    "devDependencies": {
+        "@types/node": "^18.19.3",
+        "@types/pidusage": "^2.0.5",
+        "typescript": "^5.3.3"
+    },
+    "engines": {
+        "node": ">=14"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/VeXell/pm2-autoscale.git"
+    },
+    "author": "Viacheslav Volkov (vexell@gmail.com)",
+    "license": "MIT",
+    "keywords": [
+        "PM2",
+        "Autoscale",
+        "Configuration",
+        "Scaling",
+        "Scale",
+        "Utilization",
+        "Module"
+    ]
+}

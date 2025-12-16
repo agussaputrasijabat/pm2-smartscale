@@ -1,6 +1,6 @@
 {
     "name": "pm2-smartscale",
-    "version": "1.4.1",
+    "version": "1.5.0",
     "description": "PM2 module to help dynamically scale applications based on utilization demand",
     "main": "index.js",
     "dependencies": {

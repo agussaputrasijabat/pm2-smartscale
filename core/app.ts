@@ -94,9 +94,11 @@ export class App {
         return cpuValues;
     }
 
-    getTotalCpuUsage(): number {
+    getAverageCpuUsage(): number {
         const cpuValues = this.getCpuThreshold();
-        return cpuValues.reduce((sum, value) => sum + value, 0);
+        if (cpuValues.length === 0) return 0;
+        const total = cpuValues.reduce((sum, value) => sum + value, 0);
+        return Math.round(total / cpuValues.length);
     }
 
     getAverageUsedMemory() {

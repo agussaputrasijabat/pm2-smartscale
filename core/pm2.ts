@@ -225,8 +225,8 @@ function processWorkingApp(conf: IConfig, workingApp: App) {
     const cpuValues = [...workingApp.getCpuThreshold()];
     const cpuValuesString = cpuValues.join(',');
 
-    // Compute total (aggregate) CPU usage across all instances
-    const totalCpuValue = workingApp.getTotalCpuUsage();
+    // Compute average CPU usage across all instances (total / instance count)
+    const avgCpuValue = workingApp.getAverageCpuUsage();
 
     const scaleCpuThreshold =
         workingApp.getAppConfig().scale_cpu_threshold ?? conf.scale_cpu_threshold;
@@ -250,8 +250,8 @@ function processWorkingApp(conf: IConfig, workingApp: App) {
     }
 
     const needIncreaseWorkers =
-        // Increase workers if total CPU load exceeds the threshold
-        totalCpuValue >= scaleCpuThreshold &&
+        // Increase workers if average CPU load exceeds the threshold
+        avgCpuValue >= scaleCpuThreshold &&
         // Increase workers only if we have available CPUs for that
         workingApp.getActiveWorkersCount() < maxWorkers;
 
@@ -267,7 +267,7 @@ function processWorkingApp(conf: IConfig, workingApp: App) {
 
     if (needIncreaseWorkers) {
         getLogger().info(
-            `App "${workingApp.getName()}" needs increase workers because total CPU ${totalCpuValue}>=${scaleCpuThreshold}. CPUs: ${cpuValuesString}`
+            `App "${workingApp.getName()}" needs increase workers because avg CPU ${avgCpuValue}>=${scaleCpuThreshold}. CPUs: ${cpuValuesString}`
         );
 
         const freeMem = Math.round(os.freemem() / MEMORY_MB);
@@ -299,8 +299,8 @@ function processWorkingApp(conf: IConfig, workingApp: App) {
         }
     } else {
         if (
-            // Decrease workers if total CPU load is below the release threshold
-            totalCpuValue < releaseCpuThreshold &&
+            // Decrease workers if average CPU load is below the release threshold
+            avgCpuValue < releaseCpuThreshold &&
             // Process only if we have more workers than default value
             workingApp.getActiveWorkersCount() > workingApp.getDefaultWorkersCount()
         ) {
@@ -309,7 +309,7 @@ function processWorkingApp(conf: IConfig, workingApp: App) {
 
             if (secondsDiff > minSecondsToReleaseWorker) {
                 getLogger().debug(
-                    `Decrease workers for app "${workingApp.getName()}". Total CPU ${totalCpuValue} < Release CPU ${releaseCpuThreshold}`
+                    `Decrease workers for app "${workingApp.getName()}". Avg CPU ${avgCpuValue} < Release CPU ${releaseCpuThreshold}`
                 );
                 const newWorkers = workingApp.getActiveWorkersCount() - 1;
 

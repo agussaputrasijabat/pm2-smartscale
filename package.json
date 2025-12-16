@@ -1,6 +1,6 @@
 {
-    "name": "pm2-autoscale",
-    "version": "1.4.0",
+    "name": "pm2-smartscale",
+    "version": "1.4.1",
     "description": "PM2 module to help dynamically scale applications based on utilization demand",
     "main": "index.js",
     "dependencies": {
@@ -43,7 +43,7 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/VeXell/pm2-autoscale.git"
+        "url": "https://github.com/VeXell/pm2-smartscale.git"
     },
     "author": "Viacheslav Volkov (vexell@gmail.com)",
     "license": "MIT",

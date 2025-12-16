@@ -1,6 +1,21 @@
-# PM2-Autoscale [![npm version](https://badge.fury.io/js/pm2-autoscale.svg)](https://www.npmjs.com/package/pm2-autoscale)
+# pm2-smartscale [![npm version](https://badge.fury.io/js/pm2-smartscale.svg)](https://www.npmjs.com/package/pm2-smartscale)
 
-PM2 is a module that helps dynamically scale applications based on utilization demand.
+> **Fork Notice**: This is a fork of [VeXell/pm2-autoscale](https://github.com/VeXell/pm2-autoscale) with modified scaling behavior.
+
+PM2 module that helps dynamically scale applications based on utilization demand.
+
+## Key Difference from Original
+
+This fork changes the scaling policy to use **average CPU utilization** across all instances instead of triggering when any single instance exceeds the threshold:
+
+| Behavior | Original (VeXell/pm2-autoscale) | This Fork |
+|----------|--------------------------------|-----------|
+| **Scale Out** | When **any single instance** CPU ≥ threshold | When **average CPU** of all instances ≥ threshold |
+| **Scale In** | When **average CPU** < threshold | When **average CPU** of all instances < threshold |
+
+**Example**: With 4 instances at CPU usage 90%, 70%, 85%, 75%:
+- **Original**: Would scale because one instance (90%) exceeds threshold
+- **This Fork**: Calculates average = (90+70+85+75)/4 = **80%**, scales only if threshold ≤ 80%
 
 ## Motivation
 
@@ -8,26 +23,26 @@ By default, PM2 runs the application with a specified number of instances, which
 
 ## Solution
 
-The module helps dynamically increase application instances depending on CPU utilization of every application. You can run your application with the minimum required instances. When the module detects that CPU utilization is higher than `scale_cpu_threshold`, it will start increasing instances to a maximum of `CPUs-1` or `max_instances` (if set in the module config), provided that the server has available free memory. When the module detects that CPU utilization is decreasing, it will stop the unnecessary instances.
+The module helps dynamically increase application instances depending on CPU utilization of every application. You can run your application with the minimum required instances. When the module detects that the **average CPU utilization** across all instances is higher than `scale_cpu_threshold`, it will start increasing instances to a maximum of `CPUs-1` or `max_instances` (if set in the module config), provided that the server has available free memory. When the module detects that CPU utilization is decreasing, it will stop the unnecessary instances.
 
 ## Install
 
 ```bash
-pm2 install pm2-autoscale
+pm2 install pm2-smartscale
 ```
 
 ## Uninstall
 
 ```bash
-pm2 uninstall pm2-autoscale
+pm2 uninstall pm2-smartscale
 ```
 
 ## Module Configuration
 
 Default settings:
 
--   `scale_cpu_threshold` Maximum value of CPU utilization one of application instances when the module will try to increase application instances. (default to `30`)
--   `release_cpu_threshold` Average value of all CPUs utilization of the application when the module will decrease application instances (default to `5`)
+-   `scale_cpu_threshold` Average CPU utilization across all application instances when the module will try to increase application instances. (default to `30`)
+-   `release_cpu_threshold` Average CPU utilization across all application instances when the module will decrease application instances (default to `5`)
 -   `ignore_apps` Global setting to skip app by name from the autoscale. You can enter multiple apps names separated by comma (default to "" - empty string)
 -   `max_workers` The maximum number of application instances this module will
     spawn up to. If set to `0` or `max` - the maximum number of instance will be the total number of CPUs (default to `-1`)
@@ -41,9 +56,9 @@ Default settings:
 To modify the module config values you can use the following commands:
 
 ```bash
-pm2 set pm2-autoscale:debug true
-pm2 set pm2-autoscale:scale_cpu_threshold 50
-pm2 set pm2-autoscale:ignore_apps app1,app2
+pm2 set pm2-smartscale:debug true
+pm2 set pm2-smartscale:scale_cpu_threshold 50
+pm2 set pm2-smartscale:ignore_apps app1,app2
 ```
 
 ## Specific app configuration
@@ -78,6 +93,13 @@ Have a look at the example below:
 ```
 
 ## Change log
+
+### Version 1.5.0 (Fork)
+
+-   **Breaking Change**: Scaling policy now uses **average CPU utilization** across all instances instead of triggering on max (single instance) CPU
+-   Scale out triggers when the average CPU of all instances exceeds `scale_cpu_threshold`
+-   Scale in triggers when the average CPU of all instances falls below `release_cpu_threshold`
+-   This provides more stable scaling behavior by considering the overall load rather than spikes from individual instances
 
 ### Version 1.4.0
 

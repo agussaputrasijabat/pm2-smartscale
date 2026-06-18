@@ -6,16 +6,16 @@ PM2 module that helps dynamically scale applications based on utilization demand
 
 ## Key Difference from Original
 
-This fork changes the scaling policy to use **average CPU utilization** across all instances instead of triggering when any single instance exceeds the threshold:
+This fork changes the scaling policy to use the **average CPU utilization across an application's own instances** instead of triggering when any single instance exceeds the threshold. Each application is evaluated independently: the average is computed only over that app's workers, not across every instance running on the server.
 
 | Behavior | Original (VeXell/pm2-autoscale) | This Fork |
 |----------|--------------------------------|-----------|
-| **Scale Out** | When **any single instance** CPU ≥ threshold | When **average CPU** of all instances ≥ threshold |
-| **Scale In** | When **average CPU** < threshold | When **average CPU** of all instances < threshold |
+| **Scale Out** | When **any single instance** of the app CPU ≥ threshold | When the **average CPU across the app's instances** ≥ threshold |
+| **Scale In** | When **average CPU across the app's instances** < threshold | When the **average CPU across the app's instances** < threshold |
 
-**Example**: With 4 instances at CPU usage 90%, 70%, 85%, 75%:
+**Example**: A single app running 4 instances at CPU usage 90%, 70%, 85%, 75%:
 - **Original**: Would scale because one instance (90%) exceeds threshold
-- **This Fork**: Calculates average = (90+70+85+75)/4 = **80%**, scales only if threshold ≤ 80%
+- **This Fork**: Calculates that app's average = (90+70+85+75)/4 = **80%**, scales only if threshold ≤ 80%
 
 ## Motivation
 
@@ -23,7 +23,7 @@ By default, PM2 runs the application with a specified number of instances, which
 
 ## Solution
 
-The module helps dynamically increase application instances depending on CPU utilization of every application. You can run your application with the minimum required instances. When the module detects that the **average CPU utilization** across all instances is higher than `scale_cpu_threshold`, it will start increasing instances to a maximum of `CPUs-1` or `max_instances` (if set in the module config), provided that the server has available free memory. When the module detects that CPU utilization is decreasing, it will stop the unnecessary instances.
+The module helps dynamically increase application instances depending on CPU utilization of every application. You can run your application with the minimum required instances. When the module detects that an application's **average CPU utilization across its own instances** is higher than `scale_cpu_threshold`, it will start increasing that app's instances to a maximum of `CPUs-1` or `max_instances` (if set in the module config), provided that the server has available free memory. When the module detects that the app's CPU utilization is decreasing, it will stop the unnecessary instances.
 
 ## Install
 

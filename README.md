@@ -100,6 +100,20 @@ Have a look at the example below:
 
 ## Change log
 
+### Version 2.1.1 (Fork)
+
+-   **Fix flapping** (scale up immediately followed by scale down):
+    -   A freshly added worker reports ~0% CPU on its first ticks and used to drag the
+        app average below the release threshold right after a scale-up. Workers are now
+        excluded from the scaling average until they have a few samples (warm-up). The
+        scale-up decision still uses an honest all-workers average.
+    -   Added an anti-flapping cooldown: the module will not scale an app down until
+        `min_seconds_to_release_worker` has also passed since the last scale-**up**. This
+        cooldown is not reset by worker restarts (`max_memory_restart`, crashes).
+-   **Tuning note**: to avoid oscillation, keep `release_cpu_threshold` well below
+    `scale_cpu_threshold`. Because removing a worker concentrates load onto the rest, a
+    safe upper bound is roughly `release < scale_cpu_threshold / 2` at low worker counts.
+
 ### Version 2.1.0 (Fork)
 
 -   **Fix**: Apps no longer get stuck scaled up. Previously the scale-down floor was
@@ -111,15 +125,6 @@ Have a look at the example below:
     comes from this config instead of the mutable instance count, so it stays correct
     across restarts. Defaults to `1`; set it higher per app if you need a minimum number
     of always-on workers.
--   **Fix flapping** (scale up immediately followed by scale down):
-    -   A freshly added worker reports ~0% CPU on its first ticks and used to drag the
-        app average below the release threshold right after a scale-up. Workers are now
-        excluded from the scaling average until they have a few samples (warm-up).
-    -   Added an anti-flapping cooldown: the module will not scale an app down until
-        `min_seconds_to_release_worker` has also passed since the last scale-**up**.
--   **Tuning note**: to avoid oscillation, keep `release_cpu_threshold` well below
-    `scale_cpu_threshold`. Because removing a worker concentrates load onto the rest, a
-    safe upper bound is roughly `release < scale_cpu_threshold / 2` at low worker counts.
 
 ### Version 1.5.0 (Fork)
 

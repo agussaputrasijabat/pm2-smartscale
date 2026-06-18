@@ -46,6 +46,11 @@ Default settings:
 -   `ignore_apps` Global setting to skip app by name from the autoscale. You can enter multiple apps names separated by comma (default to "" - empty string)
 -   `max_workers` The maximum number of application instances this module will
     spawn up to. If set to `0` or `max` - the maximum number of instance will be the total number of CPUs (default to `-1`)
+-   `min_workers` The minimum number of application instances the module will keep
+    when scaling down. The module never reduces an app below this floor, no matter
+    how low the CPU usage is. This floor comes from config (not from the live PM2
+    instance count), so it stays correct even after the module restarts while an
+    app is already scaled up (default to `1`)
 -   `min_seconds_to_add_worker` The minimum number of seconds between spawning new
     application instances if the load is high CPU utilization is high enough
     (defaults to `30`)
@@ -84,6 +89,7 @@ Have a look at the example below:
                     "is_enabled": true,
                     "scale_cpu_threshold": 95,
                     "release_cpu_threshold": 50,
+                    "min_workers": 2,
                     "max_workers": 5
                 }
             }
@@ -93,6 +99,18 @@ Have a look at the example below:
 ```
 
 ## Change log
+
+### Version 2.1.0 (Fork)
+
+-   **Fix**: Apps no longer get stuck scaled up. Previously the scale-down floor was
+    derived from the live PM2 instance count captured when the internal app state was
+    created. If that state was recreated while an app was already scaled up (e.g. the
+    module restarted, or the app reloaded), the floor latched to the inflated count and
+    scale-down never triggered even at near-zero CPU.
+-   Add new config option `min_workers` (global and per-app). The scale-down floor now
+    comes from this config instead of the mutable instance count, so it stays correct
+    across restarts. Defaults to `1`; set it higher per app if you need a minimum number
+    of always-on workers.
 
 ### Version 1.5.0 (Fork)
 

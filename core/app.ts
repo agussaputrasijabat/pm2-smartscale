@@ -17,7 +17,6 @@ const MONIT_ITEMS_LIMIT = 30;
 export class App {
     private readonly pids: { [key: number]: IPidData } = {};
     private readonly name: string;
-    private readonly defaultWorkersCount: number = 0;
     private appConfig: IAppEnvConfig = {};
 
     private lastIncreaseWorkersTime: number = 0;
@@ -25,9 +24,8 @@ export class App {
 
     public isProcessing: boolean = false;
 
-    constructor(name: string, instances: number) {
+    constructor(name: string) {
         this.name = name;
-        this.defaultWorkersCount = instances;
     }
 
     removeNotActivePids(activePids: number[]) {
@@ -128,10 +126,6 @@ export class App {
 
     getName() {
         return this.name;
-    }
-
-    getDefaultWorkersCount() {
-        return this.defaultWorkersCount;
     }
 
     getActiveWorkersCount() {

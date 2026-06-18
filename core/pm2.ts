@@ -11,7 +11,7 @@ import { getLogger } from '../utils/logger';
 import { getCpuCount } from '../utils/cpu';
 
 type IPidsData = Record<number, IPidDataInput>;
-type IAppData = { pids: number[]; pm2Env: pm2.Pm2Env; appConfig: IAppEnvConfig };
+type IAppData = { pids: number[]; appConfig: IAppEnvConfig };
 
 const WORKER_CHECK_INTERVAL = 1000;
 const SHOW_STAT_INTERVAL = 10000;
@@ -21,6 +21,7 @@ const TOTAL_CPUS = getCpuCount();
 const DEFAULT_MIN_SECONDS_TO_ADD_WORKER = 10;
 const DEFAULT_MIN_SECONDS_TO_RELEASE_WORKER = 30;
 const DEFAULT_MAX_AVAILABLE_WORKERS_COUNT = TOTAL_CPUS - 1;
+const DEFAULT_MIN_WORKERS_COUNT = 1;
 
 const APPS: { [key: string]: App } = {};
 
@@ -100,12 +101,9 @@ const detectActiveApps = (conf: IConfig) => {
                 return;
             }
 
-            const pm2Env = app.pm2_env as pm2.Pm2Env;
-
             if (!mapAppData[appName]) {
                 mapAppData[appName] = {
                     pids: [],
-                    pm2Env,
                     appConfig,
                 };
             }
@@ -140,7 +138,7 @@ const detectActiveApps = (conf: IConfig) => {
         // Create new apps if not exist
         for (const [appName, entry] of Object.entries(mapAppData)) {
             if (entry.pids.length && !APPS[appName]) {
-                APPS[appName] = new App(appName, entry.pm2Env.instances);
+                APPS[appName] = new App(appName);
             }
         }
 
@@ -243,6 +241,23 @@ function processWorkingApp(conf: IConfig, workingApp: App) {
         maxWorkers = parsedConfigWorkers;
     }
 
+    // Resolve the minimum workers floor from config (NOT from the live PM2
+    // instance count, which inflates after scaling and would latch the floor
+    // high if the App object is recreated, blocking scale-down forever).
+    const minWorkersConfig =
+        workingApp.getAppConfig().min_workers ?? conf.min_workers ?? DEFAULT_MIN_WORKERS_COUNT;
+    let minWorkers = parseInt(String(minWorkersConfig), 10);
+
+    if (isNaN(minWorkers) || minWorkers < 1) {
+        minWorkers = DEFAULT_MIN_WORKERS_COUNT;
+    }
+
+    if (minWorkers > maxWorkers) {
+        // Floor can never exceed the ceiling, but never drop below 1 either —
+        // an app must always keep at least one worker running.
+        minWorkers = Math.max(maxWorkers, 1);
+    }
+
     if (workingApp.getActiveWorkersCount() >= maxWorkers) {
         getLogger().debug(
             `App "${workingApp.getName()}" is reached max workers "${maxWorkers}. CPUs: ${cpuValuesString}"`
@@ -301,8 +316,8 @@ function processWorkingApp(conf: IConfig, workingApp: App) {
         if (
             // Decrease workers if average CPU load is below the release threshold
             avgCpuValue < releaseCpuThreshold &&
-            // Process only if we have more workers than default value
-            workingApp.getActiveWorkersCount() > workingApp.getDefaultWorkersCount()
+            // Process only if we have more workers than the minimum floor
+            workingApp.getActiveWorkersCount() > minWorkers
         ) {
             const now = Number(new Date());
             const secondsDiff = Math.round((now - workingApp.getLastDecreaseWorkersTime()) / 1000);
@@ -313,7 +328,7 @@ function processWorkingApp(conf: IConfig, workingApp: App) {
                 );
                 const newWorkers = workingApp.getActiveWorkersCount() - 1;
 
-                if (newWorkers >= workingApp.getDefaultWorkersCount()) {
+                if (newWorkers >= minWorkers) {
                     workingApp.isProcessing = true;
 
                     pm2.scale(workingApp.getName(), newWorkers, () => {

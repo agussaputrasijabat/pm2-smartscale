@@ -1,6 +1,6 @@
 {
     "name": "pm2-smartscale",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "description": "PM2 module to help dynamically scale applications based on utilization demand",
     "main": "dist/index.js",
     "dependencies": {
@@ -31,6 +31,7 @@
         "debug": false,
         "ignore_apps": "",
         "max_workers": "-1",
+        "min_workers": 1,
         "min_seconds_to_add_worker": 30,
         "min_seconds_to_release_worker": 180
     },

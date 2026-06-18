@@ -1,6 +1,6 @@
 {
     "name": "pm2-smartscale",
-    "version": "1.5.0",
+    "version": "2.0.0",
     "description": "PM2 module to help dynamically scale applications based on utilization demand",
     "main": "dist/index.js",
     "dependencies": {
@@ -12,7 +12,7 @@
     "scripts": {
         "build": "tsc -p tsconfig.json",
         "watch": "tsc -w -p tsconfig.json",
-        "publish": "npm run build && npm publish"
+        "prepublishOnly": "npm run build"
     },
     "files": [
         "README.md",
@@ -44,7 +44,7 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/agussaputrasijabat/pm2-smartscale.git"
+        "url": "git+https://github.com/agussaputrasijabat/pm2-smartscale.git"
     },
     "author": "Agus Saputra Sijabat (agus@eltechdigital.id)",
     "license": "MIT",

@@ -4,6 +4,9 @@
         "module": "Node16",
         "lib": ["ES2017", "DOM"],
         // "moduleResolution": "Node",
+        // TS 6 no longer auto-includes @types/* globally; declare node explicitly
+        // so `node:os` / `node:child_process` builtins resolve via @types/node.
+        "types": ["node"],
         "rootDir": "./",
         "allowSyntheticDefaultImports": true,
         "importHelpers": true,

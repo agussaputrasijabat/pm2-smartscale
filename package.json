@@ -4,9 +4,10 @@
     "description": "PM2 module to help dynamically scale applications based on utilization demand",
     "main": "index.js",
     "dependencies": {
-        "pidusage": "^3.0.2",
-        "pm2": "^5.4.2",
-        "pmx": "beta"
+        "pidusage": "^4.0.1",
+        "pm2": "^7.0.1",
+        "pmx": "^1.6.8",
+        "tslib": "^2.8.1"
     },
     "scripts": {
         "build": "tsc -p tsconfig.json",
@@ -34,12 +35,12 @@
         "min_seconds_to_release_worker": 180
     },
     "devDependencies": {
-        "@types/node": "^18.19.3",
+        "@types/node": "^22.19.21",
         "@types/pidusage": "^2.0.5",
-        "typescript": "^5.3.3"
+        "typescript": "^6.0.3"
     },
     "engines": {
-        "node": ">=14"
+        "node": ">=18"
     },
     "repository": {
         "type": "git",

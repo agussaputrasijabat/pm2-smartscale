@@ -25,13 +25,13 @@
         }
     ],
     "config": {
-        "scale_cpu_threshold": 30,
-        "release_cpu_threshold": 5,
+        "scale_cpu_threshold": 60,
+        "release_cpu_threshold": 40,
         "debug": false,
         "ignore_apps": "",
         "max_workers": "-1",
-        "min_seconds_to_add_worker": 10,
-        "min_seconds_to_release_worker": 30
+        "min_seconds_to_add_worker": 60,
+        "min_seconds_to_release_worker": 120
     },
     "devDependencies": {
         "@types/node": "^18.19.3",

@@ -1,6 +1,6 @@
 # pm2-smartscale [![npm version](https://badge.fury.io/js/pm2-smartscale.svg)](https://www.npmjs.com/package/pm2-smartscale)
 
-> **Fork Notice**: This is a fork of [VeXell/pm2-autoscale](https://github.com/VeXell/pm2-autoscale) with modified scaling behavior.
+> **Fork Notice**: This is a fork of [pm2-autoscale](https://github.com/VeXell/pm2-autoscale), originally created by **Viacheslav Volkov** ([VeXell](https://github.com/VeXell)). This fork is maintained by Agus Saputra Sijabat with modified scaling behavior. All credit for the original module goes to the original author.
 
 PM2 module that helps dynamically scale applications based on utilization demand.
 
@@ -41,16 +41,16 @@ pm2 uninstall pm2-smartscale
 
 Default settings:
 
--   `scale_cpu_threshold` Average CPU utilization across all application instances when the module will try to increase application instances. (default to `30`)
--   `release_cpu_threshold` Average CPU utilization across all application instances when the module will decrease application instances (default to `5`)
+-   `scale_cpu_threshold` Average CPU utilization across all application instances when the module will try to increase application instances. (default to `70`)
+-   `release_cpu_threshold` Average CPU utilization across all application instances when the module will decrease application instances (default to `30`)
 -   `ignore_apps` Global setting to skip app by name from the autoscale. You can enter multiple apps names separated by comma (default to "" - empty string)
 -   `max_workers` The maximum number of application instances this module will
     spawn up to. If set to `0` or `max` - the maximum number of instance will be the total number of CPUs (default to `-1`)
 -   `min_seconds_to_add_worker` The minimum number of seconds between spawning new
     application instances if the load is high CPU utilization is high enough
-    (defaults to `10`)
+    (defaults to `30`)
 -   `min_seconds_to_release_worker` The minimum number of seconds between closing
-    application instances if the CPU utilization is low enough (defaults to `30`)
+    application instances if the CPU utilization is low enough (defaults to `180`)
 -   `debug` Enable debug mode to show logs from the module (default to `false`)
 
 To modify the module config values you can use the following commands:

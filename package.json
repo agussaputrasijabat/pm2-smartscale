@@ -43,9 +43,9 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/VeXell/pm2-smartscale.git"
+        "url": "https://github.com/agussaputrasijabat/pm2-smartscale.git"
     },
-    "author": "Viacheslav Volkov (vexell@gmail.com)",
+    "author": "Agus Saputra Sijabat (agus@eltechdigital.id)",
     "license": "MIT",
     "keywords": [
         "PM2",

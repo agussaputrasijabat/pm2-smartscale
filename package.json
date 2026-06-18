@@ -2,7 +2,7 @@
     "name": "pm2-smartscale",
     "version": "1.5.0",
     "description": "PM2 module to help dynamically scale applications based on utilization demand",
-    "main": "index.js",
+    "main": "dist/index.js",
     "dependencies": {
         "pidusage": "^4.0.1",
         "pm2": "^7.0.1",
@@ -16,13 +16,13 @@
     },
     "files": [
         "README.md",
-        "**/*.js"
+        "dist/**/*.js"
     ],
     "apps": [
         {
             "merge_logs": true,
             "max_memory_restart": "256M",
-            "script": "index.js"
+            "script": "dist/index.js"
         }
     ],
     "config": {

@@ -8,6 +8,7 @@
         // so `node:os` / `node:child_process` builtins resolve via @types/node.
         "types": ["node"],
         "rootDir": "./",
+        "outDir": "./dist",
         "allowSyntheticDefaultImports": true,
         "importHelpers": true,
         "alwaysStrict": true,

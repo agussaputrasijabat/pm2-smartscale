@@ -14,6 +14,12 @@ type IPidData = {
 
 const MONIT_ITEMS_LIMIT = 30;
 
+// A freshly added worker reports ~0% CPU on its first ticks. Excluding workers
+// with fewer than this many samples from the scaling average prevents a new
+// worker from dragging the average down right after a scale-up (which would
+// otherwise trigger an immediate, wrong scale-down — flapping).
+const MIN_CPU_SAMPLES_FOR_SCALING = 3;
+
 export class App {
     private readonly pids: { [key: number]: IPidData } = {};
     private readonly name: string;
@@ -21,6 +27,9 @@ export class App {
 
     private lastIncreaseWorkersTime: number = 0;
     private lastDecreaseWorkersTime: number = 0;
+    // Set only by an intentional module scale-up (NOT by a pid restart), so the
+    // anti-flap cooldown is not reset by max_memory_restart / crash restarts.
+    private lastScaleUpTime: number = 0;
 
     public isProcessing: boolean = false;
 
@@ -75,6 +84,15 @@ export class App {
         return this;
     }
 
+    updateLastScaleUpTime() {
+        this.lastScaleUpTime = Number(new Date());
+        return this;
+    }
+
+    getLastScaleUpTime() {
+        return this.lastScaleUpTime;
+    }
+
     getMonitValues() {
         return this.pids;
     }
@@ -92,9 +110,33 @@ export class App {
         return cpuValues;
     }
 
-    getAverageCpuUsage(): number {
-        const cpuValues = this.getCpuThreshold();
+    // Average CPU across the app's workers.
+    //   - Scale-DOWN should pass the default (warm-up filter on): a worker just
+    //     added by scale-up reads ~0% and would skew the average down, causing a
+    //     wrong immediate scale-down. Cold workers are excluded.
+    //   - Scale-UP should pass includeAll=true (honest average): counting the new
+    //     worker's real load keeps the decision conservative and avoids cascading
+    //     scale-ups before the worker is reflected in the average.
+    getAverageCpuUsage(includeAll = false): number {
+        const warmedUp: number[] = [];
+        const all: number[] = [];
+
+        for (const [, entry] of Object.entries(this.pids)) {
+            const value = Math.round(
+                entry.cpu.reduce((sum, value) => sum + value, 0) / entry.cpu.length
+            );
+            all.push(value);
+
+            if (entry.cpu.length >= MIN_CPU_SAMPLES_FOR_SCALING) {
+                warmedUp.push(value);
+            }
+        }
+
+        // Fall back to all workers if none have warmed up yet (e.g. app startup),
+        // so we never make a decision on an empty set.
+        const cpuValues = includeAll || warmedUp.length === 0 ? all : warmedUp;
         if (cpuValues.length === 0) return 0;
+
         const total = cpuValues.reduce((sum, value) => sum + value, 0);
         return Math.round(total / cpuValues.length);
     }

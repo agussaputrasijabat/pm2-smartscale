@@ -223,8 +223,11 @@ function processWorkingApp(conf: IConfig, workingApp: App) {
     const cpuValues = [...workingApp.getCpuThreshold()];
     const cpuValuesString = cpuValues.join(',');
 
-    // Compute average CPU usage across all instances (total / instance count)
-    const avgCpuValue = workingApp.getAverageCpuUsage();
+    // Average CPU across the app's workers. Scale-up uses an honest average over
+    // all workers; scale-down excludes freshly added (cold) workers so a worker
+    // that just came up at ~0% does not trigger a wrong immediate scale-down.
+    const avgCpuValueForScaleUp = workingApp.getAverageCpuUsage(true);
+    const avgCpuValueForScaleDown = workingApp.getAverageCpuUsage();
 
     const scaleCpuThreshold =
         workingApp.getAppConfig().scale_cpu_threshold ?? conf.scale_cpu_threshold;
@@ -266,7 +269,7 @@ function processWorkingApp(conf: IConfig, workingApp: App) {
 
     const needIncreaseWorkers =
         // Increase workers if average CPU load exceeds the threshold
-        avgCpuValue >= scaleCpuThreshold &&
+        avgCpuValueForScaleUp >= scaleCpuThreshold &&
         // Increase workers only if we have available CPUs for that
         workingApp.getActiveWorkersCount() < maxWorkers;
 
@@ -282,7 +285,7 @@ function processWorkingApp(conf: IConfig, workingApp: App) {
 
     if (needIncreaseWorkers) {
         getLogger().info(
-            `App "${workingApp.getName()}" needs increase workers because avg CPU ${avgCpuValue}>=${scaleCpuThreshold}. CPUs: ${cpuValuesString}`
+            `App "${workingApp.getName()}" needs increase workers because avg CPU ${avgCpuValueForScaleUp}>=${scaleCpuThreshold}. CPUs: ${cpuValuesString}`
         );
 
         const freeMem = Math.round(os.freemem() / MEMORY_MB);
@@ -308,6 +311,7 @@ function processWorkingApp(conf: IConfig, workingApp: App) {
 
             pm2.scale(workingApp.getName(), '+1', () => {
                 workingApp.updateLastIncreaseWorkersTime();
+                workingApp.updateLastScaleUpTime();
                 workingApp.isProcessing = false;
                 getLogger().info(`App "${workingApp.getName()}" scaled with +1 worker`);
             });
@@ -315,16 +319,35 @@ function processWorkingApp(conf: IConfig, workingApp: App) {
     } else {
         if (
             // Decrease workers if average CPU load is below the release threshold
-            avgCpuValue < releaseCpuThreshold &&
+            avgCpuValueForScaleDown < releaseCpuThreshold &&
             // Process only if we have more workers than the minimum floor
             workingApp.getActiveWorkersCount() > minWorkers
         ) {
             const now = Number(new Date());
-            const secondsDiff = Math.round((now - workingApp.getLastDecreaseWorkersTime()) / 1000);
+            const secondsSinceDecrease = Math.round(
+                (now - workingApp.getLastDecreaseWorkersTime()) / 1000
+            );
+            // Anti-flapping: also wait after the last scale-UP before scaling
+            // down, so a just-added worker has time to take real load instead of
+            // bouncing straight back down. Uses the dedicated scale-up timestamp
+            // (set only by an intentional scale-up), so worker restarts do not
+            // suppress legitimate scale-downs.
+            const secondsSinceScaleUp = Math.round(
+                (now - workingApp.getLastScaleUpTime()) / 1000
+            );
 
-            if (secondsDiff > minSecondsToReleaseWorker) {
+            if (secondsSinceScaleUp <= minSecondsToReleaseWorker) {
                 getLogger().debug(
-                    `Decrease workers for app "${workingApp.getName()}". Avg CPU ${avgCpuValue} < Release CPU ${releaseCpuThreshold}`
+                    `App "${workingApp.getName()}" scale-down on hold: only ${secondsSinceScaleUp}s since last scale-up (need >${minSecondsToReleaseWorker}s)`
+                );
+            }
+
+            if (
+                secondsSinceDecrease > minSecondsToReleaseWorker &&
+                secondsSinceScaleUp > minSecondsToReleaseWorker
+            ) {
+                getLogger().debug(
+                    `Decrease workers for app "${workingApp.getName()}". Avg CPU ${avgCpuValueForScaleDown} < Release CPU ${releaseCpuThreshold}`
                 );
                 const newWorkers = workingApp.getActiveWorkersCount() - 1;
 

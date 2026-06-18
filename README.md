@@ -100,6 +100,34 @@ Have a look at the example below:
 
 ## Change log
 
+### Version 2.1.3 (Fork)
+
+-   **Security**: patch transitive CVEs pulled in by `pm2@7.0.1` via npm `overrides`
+    (pm2 pins these exactly and has no fixed release yet):
+    -   `ws` `8.20.0` → `8.21.0`: fixes **CVE-2026-48779** (High, DoS via memory
+        exhaustion from high-volume tiny WebSocket fragments) and **CVE-2026-45736**
+        (Moderate, uninitialized memory disclosure via `close()` reason).
+    -   `js-yaml` `4.1.1` → `4.2.0`: fixes **CVE-2026-53550** (Moderate,
+        quadratic-time DoS from repeated merge-key aliases).
+    -   `@pm2/js-api` is kept on `ws` `7.5.11` (already patched) to avoid a needless
+        major bump. `npm audit` reports 0 vulnerabilities.
+
+### Version 2.1.2 (Fork)
+
+-   **Crash hardening** — a single malformed PM2 process descriptor, empty data set,
+    or bad env config can no longer crash the long-running daemon:
+    -   Guard unchecked `pm2_env.axm_options` / `pm2_env.env` access, and validate that
+        the parsed `pm2_autoscale` env config is a plain object (a literal `null`
+        previously crashed on `is_enabled`).
+    -   Add `try/catch` backstops in the `pm2.list` / `pidusage` / debug-stats callbacks
+        plus top-level `uncaughtException` / `unhandledRejection` handlers.
+    -   Seed every `reduce()` with an initial value and guard empty arrays.
+-   **Anti-flap fix**: worker restarts / pid churn no longer reset the scale-up and
+    scale-down cooldowns (only intentional scale actions stamp the timers).
+-   **Scale reliability**: handle the `pm2.scale` error argument instead of swallowing
+    it, and add a watchdog timeout so a never-firing scale callback can no longer
+    permanently freeze an app's autoscaling.
+
 ### Version 2.1.1 (Fork)
 
 -   **Fix flapping** (scale up immediately followed by scale down):

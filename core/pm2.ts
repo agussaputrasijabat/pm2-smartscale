@@ -23,13 +23,24 @@ const DEFAULT_MIN_SECONDS_TO_RELEASE_WORKER = 30;
 const DEFAULT_MAX_AVAILABLE_WORKERS_COUNT = TOTAL_CPUS - 1;
 const DEFAULT_MIN_WORKERS_COUNT = 1;
 
+// Safety net: if pm2.scale never invokes its callback (PM2 RPC drop, daemon
+// restart mid-scale) the isProcessing lock would latch forever and freeze
+// autoscaling for that app. Release the lock after this long. Tradeoff: if the
+// RPC was merely slow and completes after the timeout, the next tick may issue
+// one extra scale (net +2) — acceptable vs. a permanent freeze.
+const SCALE_CALLBACK_TIMEOUT = 30000;
+
 const APPS: { [key: string]: App } = {};
 
 const isMonitoringApp = (app: pm2.ProcessDescription) => {
-    const pm2_env = app.pm2_env as pm2.Pm2Env;
+    const pm2_env = app.pm2_env as pm2.Pm2Env | undefined;
 
     if (
-        pm2_env.axm_options.isModule ||
+        // pm2_env / axm_options can be undefined on some descriptors (resurrect,
+        // errored/launching/fork procs); guard before reading to avoid an uncaught
+        // TypeError that would crash the daemon.
+        !pm2_env ||
+        pm2_env.axm_options?.isModule ||
         !app.name ||
         !app.pid ||
         app.pm_id === undefined || // pm_id might be zero
@@ -51,14 +62,26 @@ const updateAppPidsData = (workingApp: App, pidData: IPidDataInput) => {
 };
 
 const getPm2AutoscaleConfig = (app: pm2.ProcessDescription) => {
-    const pm2_env = app.pm2_env as pm2.Pm2Env;
+    const pm2_env = app.pm2_env as pm2.Pm2Env | undefined;
     const logger = getLogger();
 
     let config: IAppEnvConfig = {};
 
-    if (pm2_env.env.pm2_autoscale) {
+    if (pm2_env?.env?.pm2_autoscale) {
         try {
-            config = JSON.parse(pm2_env.env.pm2_autoscale);
+            const parsed = JSON.parse(pm2_env.env.pm2_autoscale);
+
+            // JSON.parse accepts valid-but-non-object values ("null", "5", "true").
+            // Only adopt a plain object; otherwise keep the empty config. The literal
+            // null is the dangerous case: it would make getAppConfig() return null and
+            // crash the later `appConfig.is_enabled` access, killing the daemon.
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                config = parsed;
+            } else {
+                logger.debug(
+                    `"pm2_autoscale" env config for app ${app.name} is not a plain object, ignoring`
+                );
+            }
         } catch (error) {
             logger.debug(`Error: Can not parse "pm2_autoscale" env config for app ${app.name}`);
         }
@@ -73,113 +96,132 @@ const detectActiveApps = (conf: IConfig) => {
     pm2.list((err, apps) => {
         if (err) return console.error(err.stack || err);
 
-        const pidsMonit: IPidsData = {};
-        const mapAppData: { [key: string]: IAppData } = {};
-        const appsToIgnore = (conf.ignore_apps ? conf.ignore_apps.split(',') : []).map((entry) =>
-            entry.trim()
-        );
+        // Backstop: this whole callback runs from a setInterval tick with no caller
+        // try/catch. A single malformed process descriptor must never throw an
+        // uncaught exception and crash the long-running daemon.
+        try {
+            const pidsMonit: IPidsData = {};
+            const mapAppData: { [key: string]: IAppData } = {};
+            const appsToIgnore = (conf.ignore_apps ? conf.ignore_apps.split(',') : []).map((entry) =>
+                entry.trim()
+            );
 
-        // Fill all available apps pids
-        apps.forEach((app) => {
-            const appName = app.name;
+            // Fill all available apps pids
+            apps.forEach((app) => {
+                const appName = app.name;
 
-            if (!isMonitoringApp(app) || !appName || !app.pid || app.pm_id === undefined) {
-                return;
-            }
-
-            if (appsToIgnore.includes(appName)) {
-                logger.debug(`App "${appName}" is in ignore list`);
-                delete APPS[appName];
-                return;
-            }
-
-            const appConfig = getPm2AutoscaleConfig(app);
-
-            if (appConfig.is_enabled === false) {
-                logger.debug(`Autoscale module is disabled for the app "${appName}"`);
-                delete APPS[appName];
-                return;
-            }
-
-            if (!mapAppData[appName]) {
-                mapAppData[appName] = {
-                    pids: [],
-                    appConfig,
-                };
-            }
-
-            mapAppData[appName].pids.push(app.pid);
-
-            // Fill monitoring data
-            pidsMonit[app.pid] = { cpu: 0, memory: 0, pmId: app.pm_id, id: app.pid };
-        });
-
-        // Filters existed apps which do not have active pids
-        Object.keys(APPS).forEach((appName) => {
-            const processingApp = mapAppData[appName];
-
-            if (!processingApp) {
-                logger.debug(`Delete ${appName} because it not longer exists`);
-                delete APPS[appName];
-            } else {
-                const workingApp = APPS[appName];
-
-                if (workingApp) {
-                    const activePids = processingApp.pids;
-
-                    workingApp.removeNotActivePids(activePids);
-
-                    // Set new config data
-                    workingApp.setAppConfig(mapAppData[appName].appConfig);
-                }
-            }
-        });
-
-        // Create new apps if not exist
-        for (const [appName, entry] of Object.entries(mapAppData)) {
-            if (entry.pids.length && !APPS[appName]) {
-                APPS[appName] = new App(appName);
-            }
-        }
-
-        // Get all pids to monit
-        const pids = Object.keys(pidsMonit);
-
-        if (pids.length) {
-            // Get real pids data.
-            // !ATTENTION! Can not use PM2 app.monit because of incorrect values of CPU usage
-            pidusage(pids, (err, stats) => {
-                if (err) return console.error(err.stack || err);
-
-                // Fill data for all pids
-                if (stats && Object.keys(stats).length) {
-                    for (const [pid, stat] of Object.entries(stats)) {
-                        const pidId = Number(pid);
-
-                        if (pidId && pidsMonit[pidId]) {
-                            pidsMonit[pidId].cpu = Math.round(stat.cpu * 10) / 10;
-                            pidsMonit[pidId].memory = stat.memory;
-                        }
-                    }
+                if (!isMonitoringApp(app) || !appName || !app.pid || app.pm_id === undefined) {
+                    return;
                 }
 
-                for (const [appName, entry] of Object.entries(mapAppData)) {
+                if (appsToIgnore.includes(appName)) {
+                    logger.debug(`App "${appName}" is in ignore list`);
+                    delete APPS[appName];
+                    return;
+                }
+
+                const appConfig = getPm2AutoscaleConfig(app);
+
+                if (appConfig.is_enabled === false) {
+                    logger.debug(`Autoscale module is disabled for the app "${appName}"`);
+                    delete APPS[appName];
+                    return;
+                }
+
+                if (!mapAppData[appName]) {
+                    mapAppData[appName] = {
+                        pids: [],
+                        appConfig,
+                    };
+                }
+
+                mapAppData[appName].pids.push(app.pid);
+
+                // Fill monitoring data
+                pidsMonit[app.pid] = { cpu: 0, memory: 0, pmId: app.pm_id, id: app.pid };
+            });
+
+            // Filters existed apps which do not have active pids
+            Object.keys(APPS).forEach((appName) => {
+                const processingApp = mapAppData[appName];
+
+                if (!processingApp) {
+                    logger.debug(`Delete ${appName} because it not longer exists`);
+                    delete APPS[appName];
+                } else {
                     const workingApp = APPS[appName];
 
                     if (workingApp) {
-                        entry.pids.forEach((pidId) => {
-                            const monit = pidsMonit[pidId];
+                        const activePids = processingApp.pids;
 
-                            if (monit) {
-                                updateAppPidsData(workingApp, monit);
-                            }
-                        });
+                        workingApp.removeNotActivePids(activePids);
 
-                        // Processing...
-                        processWorkingApp(conf, workingApp);
+                        // Set new config data
+                        workingApp.setAppConfig(mapAppData[appName].appConfig);
                     }
                 }
             });
+
+            // Create new apps if not exist
+            for (const [appName, entry] of Object.entries(mapAppData)) {
+                if (entry.pids.length && !APPS[appName]) {
+                    APPS[appName] = new App(appName);
+                }
+            }
+
+            // Get all pids to monit
+            const pids = Object.keys(pidsMonit);
+
+            if (pids.length) {
+                // Get real pids data.
+                // !ATTENTION! Can not use PM2 app.monit because of incorrect values of CPU usage
+                pidusage(pids, (err, stats) => {
+                    if (err) return console.error(err.stack || err);
+
+                    try {
+                        // Fill data for all pids
+                        if (stats && Object.keys(stats).length) {
+                            for (const [pid, stat] of Object.entries(stats)) {
+                                const pidId = Number(pid);
+
+                                if (pidId && pidsMonit[pidId]) {
+                                    pidsMonit[pidId].cpu = Math.round(stat.cpu * 10) / 10;
+                                    pidsMonit[pidId].memory = stat.memory;
+                                }
+                            }
+                        }
+
+                        for (const [appName, entry] of Object.entries(mapAppData)) {
+                            const workingApp = APPS[appName];
+
+                            if (workingApp) {
+                                entry.pids.forEach((pidId) => {
+                                    const monit = pidsMonit[pidId];
+
+                                    if (monit) {
+                                        updateAppPidsData(workingApp, monit);
+                                    }
+                                });
+
+                                // Processing...
+                                processWorkingApp(conf, workingApp);
+                            }
+                        }
+                    } catch (error) {
+                        logger.error(
+                            `Unexpected error while processing pids: ${
+                                error instanceof Error ? error.stack || error.message : String(error)
+                            }`
+                        );
+                    }
+                });
+            }
+        } catch (error) {
+            logger.error(
+                `Unexpected error while detecting active apps: ${
+                    error instanceof Error ? error.stack || error.message : String(error)
+                }`
+            );
         }
     });
 };
@@ -194,23 +236,77 @@ export const startPm2Connect = (conf: IConfig) => {
 
         if (conf.debug) {
             setInterval(() => {
-                getLogger().debug(
-                    `System: Free memory ${handleUnit(os.freemem())}, Total memory ${handleUnit(
-                        os.totalmem()
-                    )}, CPU available: ${TOTAL_CPUS}`
-                );
+                try {
+                    getLogger().debug(
+                        `System: Free memory ${handleUnit(os.freemem())}, Total memory ${handleUnit(
+                            os.totalmem()
+                        )}, CPU available: ${TOTAL_CPUS}`
+                    );
 
-                if (Object.keys(APPS).length) {
-                    for (const [, app] of Object.entries(APPS)) {
-                        getLogger().debug(
-                            `App "${app.getName()}" has ${app.getActiveWorkersCount()} worker(s). CPU: ${app.getCpuThreshold()}, Memory: ${app.getTotalUsedMemory()}MB`
-                        );
+                    if (Object.keys(APPS).length) {
+                        for (const [, app] of Object.entries(APPS)) {
+                            getLogger().debug(
+                                `App "${app.getName()}" has ${app.getActiveWorkersCount()} worker(s). CPU: ${app.getCpuThreshold()}, Memory: ${app.getTotalUsedMemory()}MB`
+                            );
+                        }
+                    } else {
+                        getLogger().debug(`No apps available`);
                     }
-                } else {
-                    getLogger().debug(`No apps available`);
+                } catch (error) {
+                    getLogger().error(
+                        `Unexpected error while printing stats: ${
+                            error instanceof Error ? error.stack || error.message : String(error)
+                        }`
+                    );
                 }
             }, SHOW_STAT_INTERVAL);
         }
+    });
+};
+
+// Runs a pm2.scale and owns the isProcessing lock for the whole operation. The
+// lock is released on success, on a scale error, and via a watchdog if the
+// callback never fires — so a dropped PM2 RPC can never permanently freeze an
+// app's autoscaling. onSuccess only runs when the scale actually succeeded.
+const runScale = (
+    workingApp: App,
+    amount: pm2.ScaleAmount,
+    actionLabel: string,
+    onSuccess: () => void
+) => {
+    workingApp.isProcessing = true;
+
+    let settled = false;
+    const release = () => {
+        if (settled) return false;
+        settled = true;
+        workingApp.isProcessing = false;
+        return true;
+    };
+
+    const watchdog = setTimeout(() => {
+        if (release()) {
+            getLogger().error(
+                `Scale ${actionLabel} for app "${workingApp.getName()}" timed out after ${SCALE_CALLBACK_TIMEOUT}ms: pm2.scale callback never fired, releasing lock`
+            );
+        }
+    }, SCALE_CALLBACK_TIMEOUT);
+
+    pm2.scale(workingApp.getName(), amount, (err) => {
+        clearTimeout(watchdog);
+
+        if (!release()) return;
+
+        if (err) {
+            getLogger().error(
+                `Scale ${actionLabel} failed for app "${workingApp.getName()}": ${
+                    err.message || err
+                }`
+            );
+            return;
+        }
+
+        onSuccess();
     });
 };
 
@@ -307,12 +403,9 @@ function processWorkingApp(conf: IConfig, workingApp: App) {
             // Add small delay between increasing workers to detect load
             getLogger().debug(`Increase workers for app "${workingApp.getName()}"`);
 
-            workingApp.isProcessing = true;
-
-            pm2.scale(workingApp.getName(), '+1', () => {
+            runScale(workingApp, '+1', 'up', () => {
                 workingApp.updateLastIncreaseWorkersTime();
                 workingApp.updateLastScaleUpTime();
-                workingApp.isProcessing = false;
                 getLogger().info(`App "${workingApp.getName()}" scaled with +1 worker`);
             });
         }
@@ -352,11 +445,8 @@ function processWorkingApp(conf: IConfig, workingApp: App) {
                 const newWorkers = workingApp.getActiveWorkersCount() - 1;
 
                 if (newWorkers >= minWorkers) {
-                    workingApp.isProcessing = true;
-
-                    pm2.scale(workingApp.getName(), newWorkers, () => {
+                    runScale(workingApp, newWorkers, 'down', () => {
                         workingApp.updateLastDecreaseWorkersTime();
-                        workingApp.isProcessing = false;
                         getLogger().info(`App "${workingApp.getName()}" decreased one worker`);
                     });
                 }

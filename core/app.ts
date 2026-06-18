@@ -40,8 +40,12 @@ export class App {
     removeNotActivePids(activePids: number[]) {
         Object.keys(this.pids).forEach((pid) => {
             if (activePids.indexOf(Number(pid)) === -1) {
+                // Only drop the stale pid. Do NOT stamp the scale-down cooldown
+                // here: a crash / max_memory_restart / OOM replaces a worker with a
+                // new pid, which must not reset the anti-flap timer and suppress a
+                // legitimate scale-down. The intentional scale-down callback owns
+                // lastDecreaseWorkersTime.
                 delete this.pids[pid];
-                this.updateLastDecreaseWorkersTime();
             }
         });
 
@@ -59,7 +63,10 @@ export class App {
                 cpu: [pidData.cpu],
             };
 
-            this.updateLastIncreaseWorkersTime();
+            // Do NOT stamp the scale-up cooldown on organic pid discovery: a
+            // restarted worker reappears with a new pid, which must not reset the
+            // add timer and delay a legitimate scale-up during a load spike. The
+            // intentional scale-up callback owns lastIncreaseWorkersTime.
         } else {
             const memoryValues = [pidData.memory, ...this.pids[pid].memory].slice(
                 0,
@@ -102,7 +109,7 @@ export class App {
 
         for (const [, entry] of Object.entries(this.pids)) {
             const value = Math.round(
-                entry.cpu.reduce((sum, value) => sum + value) / entry.cpu.length
+                entry.cpu.reduce((sum, value) => sum + value, 0) / entry.cpu.length
             );
             cpuValues.push(value);
         }
@@ -143,7 +150,8 @@ export class App {
 
     getAverageUsedMemory() {
         const memoryValues = this.getAveragePidsMemory();
-        return Math.round(memoryValues.reduce((sum, value) => sum + value) / memoryValues.length);
+        if (memoryValues.length === 0) return 0;
+        return Math.round(memoryValues.reduce((sum, value) => sum + value, 0) / memoryValues.length);
     }
 
     getTotalUsedMemory() {
@@ -155,7 +163,8 @@ export class App {
                 memoryValues.push(entry.memory[0]);
             }
         }
-        return memoryValues.reduce((sum, value) => sum + value);
+        if (memoryValues.length === 0) return 0;
+        return memoryValues.reduce((sum, value) => sum + value, 0);
     }
 
     getLastIncreaseWorkersTime() {
@@ -188,7 +197,7 @@ export class App {
         for (const [, entry] of Object.entries(this.pids)) {
             // Collect average memory for every pid
             const value = Math.round(
-                entry.memory.reduce((sum, value) => sum + value) / entry.memory.length
+                entry.memory.reduce((sum, value) => sum + value, 0) / entry.memory.length
             );
             memoryValues.push(value);
         }
